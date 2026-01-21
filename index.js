@@ -16,7 +16,7 @@ async function conectarBot() {
         browser: ["GadamBot", "Safari", "1.0.0"]
     })
 
-// --- MANEJO DE CONEXIÓN Y VINCULACIÓN ---
+    // --- MANEJO DE CONEXIÓN Y VINCULACIÓN ---
     conn.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update
         
@@ -28,12 +28,6 @@ async function conectarBot() {
         }
 
         if (connection === 'close') {
-            let shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
-            if (shouldReconnect) conectarBot()
-        } else if (connection === 'open') {
-            console.log('✅ Gadam Online - Bot conectado con éxito')
-        }
-    })
             let shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
             if (shouldReconnect) conectarBot()
         } else if (connection === 'open') {
