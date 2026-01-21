@@ -1,6 +1,7 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const fs = require('fs')
+const qrcode = require('qrcode-terminal')
 
 // --- BASE DE DATOS ---
 let db = { usuarios: {} }
@@ -11,15 +12,20 @@ async function conectarBot() {
     const { state, saveCreds } = await useMultiFileAuthState('session_auth')
     
     const conn = makeWASocket({
-        printQRInTerminal: true,
         auth: state,
         browser: ["GadamBot", "Safari", "1.0.0"]
     })
 
-    conn.ev.on('creds.update', saveCreds)
-
+    // --- MANEJO DE CONEXIÓN Y QR ---
     conn.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update
+        const { connection, lastDisconnect, qr } = update
+        
+        // Muestra el QR en los logs de Render aunque la opción interna sea obsoleta
+        if (qr) {
+            console.log('--- ESCANEA EL SIGUIENTE CÓDIGO QR ---')
+            qrcode.generate(qr, { small: true })
+        }
+        
         if (connection === 'close') {
             let shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
             if (shouldReconnect) conectarBot()
@@ -27,6 +33,8 @@ async function conectarBot() {
             console.log('✅ Gadam Online - Bot conectado con éxito')
         }
     })
+
+    conn.ev.on('creds.update', saveCreds)
 
     // --- BIENVENIDA ---
     conn.ev.on('group-participants.update', async (anu) => {
@@ -39,6 +47,7 @@ async function conectarBot() {
         }
     })
 
+    // --- PROCESADOR DE MENSAJES ---
     conn.ev.on('messages.upsert', async (chatUpdate) => {
         const m = chatUpdate.messages[0]
         if (!m.message || m.key.fromMe) return
@@ -74,8 +83,7 @@ async function conectarBot() {
             '.empujar': { txt: 'empujó a', gifs: ['https://media.tenor.com/Y-S9YvS56IAAAAC/anime-push.gif', 'https://media.tenor.com/Z-S9YvS56IAAAAC/anime-shove.gif'] }
         }
 
-        if (acciones[command]) {
-            if (!mention) return
+        if (acciones[command] && mention) {
             const gif = acciones[command].gifs[Math.floor(Math.random() * acciones[command].gifs.length)]
             await conn.sendMessage(from, { video: { url: gif }, caption: `@${sender.split('@')[0]} ${acciones[command].txt} @${mention.split('@')[0]}`, gifPlayback: true, mentions: [sender, mention] })
         }
@@ -114,7 +122,7 @@ async function conectarBot() {
 
         if (command === '.retirar') {
             let cant = parseInt(args[1])
-            if (isNaN(cant) || cant > 50 || cant > u.banco) return conn.sendMessage(from, { text: "❌ Cantidad inválida o límite de 50 dabloons." })
+            if (isNaN(cant) || cant > 50 || cant > u.banco) return conn.sendMessage(from, { text: "❌ Cantidad inválida (Límite: 50 D)." })
             u.mano += cant; u.banco -= cant; saveDB()
             await conn.sendMessage(from, { text: `💰 Retiraste ${cant} Dabloons.` })
         }
@@ -163,28 +171,27 @@ async function conectarBot() {
 
         const itemsTaberna = {
             '.valhala': { nombre: 'Oro de Valhala', precio: 15, efecto: 'Recuperas el 100% de tu energía.' },
-            '.rocio': { nombre: 'Rocío de la Alborada', precio: 10, efecto: 'Tu voz ahora es clara como la de un bardo.' },
-            '.te': { nombre: 'Té de Hierbas', precio: 5, efecto: 'Un té simple y reconfortante.' },
-            '.viuda': { nombre: 'Beso de la viuda', precio: 30, efecto: 'Puedes hablar con espíritus.' },
-            '.erebo': { nombre: 'Velo de Erebo', precio: 10, efecto: 'Te has vuelto una sombra intangible.' },
-            '.copa': { nombre: 'Estelar en Copa', precio: 15, efecto: 'Emites una luz que ciega a tus enemigos.' },
-            '.rey': { nombre: 'Aliento del Rey', precio: 18, efecto: 'Tus órdenes deben ser obedecidas ahora.' },
-            '.uvas': { nombre: 'Legado de las Uvas', precio: 15, efecto: 'Vino mágico de viñedos encantados.' },
-            '.invierno': { nombre: 'Calor del Invierno', precio: 20, efecto: 'Piedras de fuego sutil calientan tu cuerpo.' },
-            '.eclipse': { nombre: 'Eclipse de Terciopelo', precio: 10, efecto: 'Ves perfectamente en la oscuridad.' },
-            '.esquirlas': { nombre: 'Esquirlas de Arrecife', precio: 15, efecto: 'Puedes respirar bajo el agua.' },
-            '.nebulosa': { nombre: 'Nebulosa en Reposo', precio: 10, efecto: 'Estás flotando por 15 minutos.' },
+            '.rocio': { nombre: 'Rocío de la Alborada', precio: 10, efecto: 'Tu voz ahora es clara.' },
+            '.te': { nombre: 'Té de Hierbas', precio: 5, efecto: 'Un té reconfortante.' },
+            '.viuda': { nombre: 'Beso de la viuda', precio: 30, efecto: 'Hablas con espíritus.' },
+            '.erebo': { nombre: 'Velo de Erebo', precio: 10, efecto: 'Eres una sombra.' },
+            '.copa': { nombre: 'Estelar en Copa', precio: 15, efecto: 'Emites luz cegadora.' },
+            '.rey': { nombre: 'Aliento del Rey', precio: 18, efecto: 'Órdenes obedecidas.' },
+            '.uvas': { nombre: 'Legado de las Uvas', precio: 15, efecto: 'Vino mágico.' },
+            '.invierno': { nombre: 'Calor del Invierno', precio: 20, efecto: 'Piedras de fuego.' },
+            '.eclipse': { nombre: 'Eclipse de Terciopelo', precio: 10, efecto: 'Ves en la oscuridad.' },
+            '.esquirlas': { nombre: 'Esquirlas de Arrecife', precio: 15, efecto: 'Respiras bajo el agua.' },
+            '.nebulosa': { nombre: 'Nebulosa en Reposo', precio: 10, efecto: 'Estás flotando.' },
             '.corazones': { nombre: 'Corazones de Gaia', precio: 17, efecto: 'Euforia total.' },
-            '.suspiros': { nombre: 'Suspiros de Psique', precio: 25, efecto: 'Tu peso se ha reducido a la mitad.' },
+            '.suspiros': { nombre: 'Suspiros de Psique', precio: 25, efecto: 'Peso reducido.' },
             '.escarcha': { nombre: 'Manzana de Escarcha', precio: 10, efecto: 'Atraviesas paredes.' },
-            '.fulgor': { nombre: 'Destilado de Fulgor', precio: 10, efecto: 'Ves el rastro de calor.' }
+            '.fulgor': { nombre: 'Destilado de Fulgor', precio: 10, efecto: 'Ves calor.' }
         }
 
         if (itemsTaberna[command]) {
             const item = itemsTaberna[command]
-            if (u.mano < item.precio) return await conn.sendMessage(from, { text: `❌ No tienes suficientes Dabloons.` })
-            u.mano -= item.precio
-            saveDB()
+            if (u.mano < item.precio) return await conn.sendMessage(from, { text: `❌ No tienes suficientes dabloons.` })
+            u.mano -= item.precio; saveDB()
             const ticket = `🎫 *TICKET*\n\n@${sender.split('@')[0]} pidió: *${item.nombre}*\n💰 Costo: ${item.precio}\n✨ Efecto: ${item.efecto}`
             await conn.sendMessage(from, { text: ticket, mentions: [sender] })
         }
@@ -192,13 +199,7 @@ async function conectarBot() {
         // --- PERFIL ---
         if (command === '.perfil') {
             const total = u.mano + u.banco
-            let rango = ""
-            if (total < 50) rango = "🪹 Vagabundo del Gremio"
-            else if (total < 150) rango = "🛖 Aldeano Principiante"
-            else if (total < 350) rango = "⚔️ Escudero de Gadam"
-            else if (total < 1000) rango = "🏰 Comandante Real"
-            else rango = "🌌 Ser Trascendental"
-
+            let rango = total < 50 ? "🪹 Vagabundo" : total < 150 ? "🛖 Aldeano" : total < 350 ? "⚔️ Escudero" : total < 1000 ? "🏰 Comandante" : "🌌 Ser Trascendental"
             let ppUrl; try { ppUrl = await conn.profilePictureUrl(sender, 'image') } catch { ppUrl = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png' }
             const perfilTxt = `🌟 *PERFIL*\n👤 @${sender.split('@')[0]}\n🏅 Rango: ${rango}\n💰 Mano: ${u.mano}\n🏦 Banco: ${u.banco}`
             await conn.sendMessage(from, { image: { url: ppUrl }, caption: perfilTxt, mentions: [sender] })
