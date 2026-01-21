@@ -16,17 +16,24 @@ async function conectarBot() {
         browser: ["GadamBot", "Safari", "1.0.0"]
     })
 
-    // --- MANEJO DE CONEXIÓN Y QR ---
-    conn.ev.on('connection.update', (update) => {
+// --- MANEJO DE CONEXIÓN Y VINCULACIÓN ---
+    conn.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update
         
-        // Muestra el QR en los logs de Render aunque la opción interna sea obsoleta
-        if (qr) {
-            console.log('--- ESCANEA EL SIGUIENTE CÓDIGO QR ---')
-            qrcode.generate(qr, { small: true })
+        // MÉTODO POR CÓDIGO (Más fácil para Render)
+        if (qr && !conn.authState.creds.registered) {
+            let numero = "5516913647" 
+            let codigo = await conn.requestPairingCode(numero)
+            console.log(`\n\n🔗 TU CÓDIGO DE VINCULACIÓN ES: ${codigo}\n\n`)
         }
-        
+
         if (connection === 'close') {
+            let shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
+            if (shouldReconnect) conectarBot()
+        } else if (connection === 'open') {
+            console.log('✅ Gadam Online - Bot conectado con éxito')
+        }
+    })
             let shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
             if (shouldReconnect) conectarBot()
         } else if (connection === 'open') {
